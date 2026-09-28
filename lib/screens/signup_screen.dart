@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:defame/theme/app_theme.dart';
 import 'package:defame/screens/email_verification_screen.dart';
@@ -15,16 +16,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // FORM KEY
   // --------------------------------------------------------------
   //
-  // Allows us to validate every TextFormField when the user
-  // presses Create Account.
+  // Lets us validate all form fields when Create Account is pressed.
   final GlobalKey<FormState> _formKey = GlobalKey<FormState>();
 
   // --------------------------------------------------------------
   // SCROLL CONTROLLER
   // --------------------------------------------------------------
   //
-  // Used to automatically scroll to the red warning banner
-  // when an important account-level error occurs.
+  // Lets us scroll to the top when an important error appears.
   final ScrollController _scrollController = ScrollController();
 
   // --------------------------------------------------------------
@@ -50,7 +49,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   DateTime? _selectedBirthDate;
 
   // --------------------------------------------------------------
-  // CHECKBOX VALUES
+  // CHECKBOXES
   // --------------------------------------------------------------
   bool _isAdultConfirmed = false;
   bool _termsAccepted = false;
@@ -62,7 +61,15 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _hideConfirmPassword = true;
 
   // --------------------------------------------------------------
-  // TOP ERROR MESSAGE
+  // LOADING STATE
+  // --------------------------------------------------------------
+  //
+  // Prevents users from submitting the signup form multiple times
+  // while Supabase is still processing the request.
+  bool _isCreatingAccount = false;
+
+  // --------------------------------------------------------------
+  // ERROR MESSAGE
   // --------------------------------------------------------------
   String? _errorMessage;
 
@@ -82,8 +89,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // CALCULATE AGE
   // --------------------------------------------------------------
   //
-  // Calculates the user's actual age while accounting for whether
-  // their birthday has already happened this year.
+  // Calculates the user's exact age based on today's date.
   int _calculateAge(DateTime birthDate) {
     final DateTime today = DateTime.now();
 
@@ -105,15 +111,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // EMAIL VALIDATION
   // --------------------------------------------------------------
   //
-  // IMPORTANT:
+  // This validates whether the email LOOKS properly structured.
   //
-  // This validates whether an email LOOKS structurally legitimate.
+  // It does not prove the mailbox exists.
   //
-  // It cannot determine whether the mailbox really exists.
-  //
-  // Real ownership will eventually be proven by requiring the user
-  // to click an email confirmation link BEFORE De-Fame starts the
-  // paid third-party age-verification process.
+  // Supabase confirmation proves the user can actually receive
+  // email at that address.
   String? _validateEmail(String? value) {
     final String email = value?.trim() ?? '';
 
@@ -121,12 +124,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return 'Please enter your email address.';
     }
 
-    // Prevent spaces.
     if (email.contains(' ')) {
       return 'Email addresses cannot contain spaces.';
     }
 
-    // Basic but stricter email structure.
     final RegExp emailPattern = RegExp(
       r'^[A-Za-z0-9.!#$%&''*+/=?^_`{|}~-]+'
       r'@[A-Za-z0-9-]+'
@@ -137,24 +138,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return 'Please enter a valid email address.';
     }
 
-    // Split into local name and domain.
     final List<String> emailParts = email.split('@');
 
     if (emailParts.length != 2) {
       return 'Please enter a valid email address.';
     }
 
-    final String localPart = emailParts[0];
     final String domain = emailParts[1];
-
-    // Example:
-    // @gmail.com is okay.
-    // @x.c is probably not something we want accepting.
     final String topLevelDomain = domain.split('.').last;
-
-    if (localPart.length < 1) {
-      return 'Please enter a valid email address.';
-    }
 
     if (domain.length < 4) {
       return 'Please enter a valid email domain.';
@@ -171,13 +162,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // PASSWORD VALIDATION
   // --------------------------------------------------------------
   //
-  // De-Fame passwords require:
+  // De-Fame password requirements:
   //
-  // • 8+ characters
-  // • 1 uppercase letter
-  // • 1 lowercase letter
-  // • 1 number
-  // • 1 special character
+  // • At least 8 characters
+  // • At least 1 uppercase letter
+  // • At least 1 lowercase letter
+  // • At least 1 number
+  // • At least 1 special character
   String? _validatePassword(String? value) {
     final String password = value ?? '';
 
@@ -189,22 +180,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
       return 'Password must be at least 8 characters.';
     }
 
-    // At least one uppercase letter.
     if (!RegExp(r'[A-Z]').hasMatch(password)) {
       return 'Password must include at least one uppercase letter.';
     }
 
-    // At least one lowercase letter.
     if (!RegExp(r'[a-z]').hasMatch(password)) {
       return 'Password must include at least one lowercase letter.';
     }
 
-    // At least one number.
     if (!RegExp(r'[0-9]').hasMatch(password)) {
       return 'Password must include at least one number.';
     }
 
-    // At least one special character.
     if (!RegExp(
       r'[!@#$%^&*(),.?":{}|<>_\-+=/\\[\];~`]',
     ).hasMatch(password)) {
@@ -218,9 +205,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // SHOW TOP ERROR
   // --------------------------------------------------------------
   //
-  // Displays the red account-level warning banner and scrolls
-  // the user back to the top so they cannot miss it.
+  // Displays the red warning banner and scrolls the user to the top.
   void _showTopError(String message) {
+    if (!mounted) {
+      return;
+    }
+
     setState(() {
       _errorMessage = message;
     });
@@ -239,22 +229,20 @@ class _SignUpScreenState extends State<SignUpScreen> {
   // --------------------------------------------------------------
   // CREATE ACCOUNT
   // --------------------------------------------------------------
-  void _handleCreateAccount() {
-    // Remove an old banner before checking the form again.
+  Future<void> _handleCreateAccount() async {
+    // Prevent duplicate signup requests.
+    if (_isCreatingAccount) {
+      return;
+    }
+
+    // Clear previous error.
     setState(() {
       _errorMessage = null;
     });
 
     // ------------------------------------------------------------
-    // FIELD VALIDATION
+    // VALIDATE FORM FIELDS
     // ------------------------------------------------------------
-    //
-    // Runs:
-    // email validation
-    // username validation
-    // DOB validation
-    // password validation
-    // confirm-password validation
     final bool formIsValid =
         _formKey.currentState?.validate() ?? false;
 
@@ -310,42 +298,115 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
 
     // ------------------------------------------------------------
-    // TEMPORARY EMAIL VERIFICATION FLOW
+    // ACCOUNT VALUES
     // ------------------------------------------------------------
-    //
-    // IMPORTANT:
-    //
-    // Right now this screen is only SIMULATING an email being sent.
-    //
-    // Once we connect our authentication backend this section will:
-    //
-    // 1. Create a pending account.
-    //
-    // 2. Send a real confirmation email.
-    //
-    // 3. Keep:
-    //
-    //      email_verified = false
-    //      age_verified = false
-    //
-    // 4. User clicks their email confirmation link.
-    //
-    // 5. Backend changes:
-    //
-    //      email_verified = true
-    //
-    // 6. ONLY THEN will De-Fame create an age-verification session.
-    //
-    // This keeps fake/unreachable emails from consuming our
-    // third-party age-verification resources.
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => EmailVerificationScreen(
-          email: _emailController.text.trim(),
+    final String email = _emailController.text.trim();
+    final String username = _usernameController.text.trim();
+    final String password = _passwordController.text;
+
+    // ------------------------------------------------------------
+    // START LOADING
+    // ------------------------------------------------------------
+    setState(() {
+      _isCreatingAccount = true;
+    });
+
+    try {
+      // ----------------------------------------------------------
+      // CREATE SUPABASE ACCOUNT
+      // ----------------------------------------------------------
+      //
+      // Supabase will:
+      //
+      // 1. Create the pending user.
+      // 2. Send the confirmation email.
+      // 3. Store the username in user metadata.
+      //
+      // After the user confirms the email, Supabase will redirect
+      // them to:
+      //
+      // defame://email-confirmed
+      //
+      // Android will later recognize that link and reopen De-Fame.
+      //
+      // We are NOT starting age verification here.
+      final AuthResponse response =
+      await Supabase.instance.client.auth.signUp(
+        email: email,
+        password: password,
+
+        // --------------------------------------------------------
+        // EMAIL DEEP-LINK REDIRECT
+        // --------------------------------------------------------
+        //
+        // This replaces the default localhost redirect.
+        emailRedirectTo: 'defame://email-confirmed',
+
+        // --------------------------------------------------------
+        // USER METADATA
+        // --------------------------------------------------------
+        data: {
+          'username': username,
+        },
+      );
+
+      // ----------------------------------------------------------
+      // MAKE SURE SUPABASE RETURNED A USER
+      // ----------------------------------------------------------
+      if (response.user == null) {
+        _showTopError(
+          'We could not create your account. Please try again.',
+        );
+
+        return;
+      }
+
+      if (!mounted) {
+        return;
+      }
+
+      // ----------------------------------------------------------
+      // GO TO CHECK EMAIL SCREEN
+      // ----------------------------------------------------------
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => EmailVerificationScreen(
+            email: email,
+          ),
         ),
-      ),
-    );
+      );
+    }
+
+    // ------------------------------------------------------------
+    // SUPABASE AUTH ERROR
+    // ------------------------------------------------------------
+    on AuthException catch (error) {
+      _showTopError(
+        error.message,
+      );
+    }
+
+    // ------------------------------------------------------------
+    // UNKNOWN ERROR
+    // ------------------------------------------------------------
+    catch (error) {
+      _showTopError(
+        'Something went wrong while creating your account. '
+            'Please try again.',
+      );
+    }
+
+    // ------------------------------------------------------------
+    // STOP LOADING
+    // ------------------------------------------------------------
+    finally {
+      if (mounted) {
+        setState(() {
+          _isCreatingAccount = false;
+        });
+      }
+    }
   }
 
   @override
@@ -381,7 +442,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
           children: [
             // --------------------------------------------------------
-            // RED ACCOUNT WARNING
+            // RED ERROR BANNER
             // --------------------------------------------------------
             if (_errorMessage != null) ...[
               Container(
@@ -446,6 +507,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
               style: TextStyle(
                 fontSize: 15,
                 height: 1.5,
+
                 color: Theme.of(context)
                     .colorScheme
                     .onSurface
@@ -728,13 +790,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
             const SizedBox(height: 20),
 
             // --------------------------------------------------------
-            // CREATE ACCOUNT
+            // CREATE ACCOUNT BUTTON
             // --------------------------------------------------------
             SizedBox(
               height: 58,
 
               child: FilledButton(
-                onPressed: _handleCreateAccount,
+                onPressed:
+                _isCreatingAccount
+                    ? null
+                    : _handleCreateAccount,
 
                 style: FilledButton.styleFrom(
                   backgroundColor: AppTheme.primaryPurple,
@@ -745,7 +810,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   ),
                 ),
 
-                child: const Text(
+                child:
+                _isCreatingAccount
+                    ? const SizedBox(
+                  width: 24,
+                  height: 24,
+
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: Colors.white,
+                  ),
+                )
+                    : const Text(
                   'Create Account',
                   style: TextStyle(
                     fontSize: 17,
