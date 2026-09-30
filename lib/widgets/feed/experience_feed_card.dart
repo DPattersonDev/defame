@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'package:defame/theme/app_theme.dart';
+import 'package:defame/widgets/feed/experience_interaction_bar.dart';
+import 'package:defame/widgets/feed/top_comments_preview.dart';
 
 class ExperienceFeedCard extends StatelessWidget {
   final Map<String, dynamic> experience;
@@ -15,7 +17,7 @@ class ExperienceFeedCard extends StatelessWidget {
   // --------------------------------------------------------------
   String _formatTimeAgo() {
     final String? createdAtText =
-    experience['created_at'] as String?;
+    experience['created_at']?.toString();
 
     if (createdAtText == null) {
       return '';
@@ -53,7 +55,7 @@ class ExperienceFeedCard extends StatelessWidget {
   // --------------------------------------------------------------
   String? _formatExpiration() {
     final String? expiresAtText =
-    experience['expires_at'] as String?;
+    experience['expires_at']?.toString();
 
     if (expiresAtText == null) {
       return null;
@@ -75,15 +77,41 @@ class ExperienceFeedCard extends StatelessWidget {
       return 'Expired';
     }
 
-    if (remaining.inHours >= 1) {
-      return 'Expires in ${remaining.inHours} hours';
+    if (remaining.inDays >= 1) {
+      final int days = remaining.inDays;
+
+      final int hours =
+      remaining.inHours.remainder(24);
+
+      if (hours > 0) {
+        return 'Expires in ${days}d ${hours}h';
+      }
+
+      return 'Expires in ${days}d';
     }
 
-    return 'Expires in ${remaining.inMinutes} minutes';
+    if (remaining.inHours >= 1) {
+      final int hours =
+          remaining.inHours;
+
+      final int minutes =
+      remaining.inMinutes.remainder(60);
+
+      if (minutes > 0) {
+        return 'Expires in ${hours}h ${minutes}m';
+      }
+
+      return 'Expires in ${hours}h';
+    }
+
+    return 'Expires in ${remaining.inMinutes}m';
   }
 
   @override
   Widget build(BuildContext context) {
+    final String experienceId =
+    experience['id'].toString();
+
     final bool isAnonymous =
         experience['is_anonymous'] == true;
 
@@ -92,22 +120,15 @@ class ExperienceFeedCard extends StatelessWidget {
             'Other';
 
     final String title =
-        experience['title']?.toString() ?? '';
+        experience['title']?.toString() ??
+            '';
 
     final String body =
-        experience['body']?.toString() ?? '';
+        experience['body']?.toString() ??
+            '';
 
     final String? subject =
     experience['subject_name']?.toString();
-
-    final int likes =
-        experience['like_count'] as int? ?? 0;
-
-    final int dislikes =
-        experience['dislike_count'] as int? ?? 0;
-
-    final int comments =
-        experience['comment_count'] as int? ?? 0;
 
     final String? expiration =
     _formatExpiration();
@@ -117,7 +138,8 @@ class ExperienceFeedCard extends StatelessWidget {
         horizontal: 4,
       ),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius:
+        BorderRadius.circular(26),
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
@@ -131,16 +153,18 @@ class ExperienceFeedCard extends StatelessWidget {
           ],
         ),
         border: Border.all(
-          color:
-          AppTheme.primaryPurple.withValues(
+          color: AppTheme.primaryPurple.withValues(
             alpha: 0.28,
           ),
         ),
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius:
+        BorderRadius.circular(26),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(22),
+          padding: const EdgeInsets.all(
+            22,
+          ),
           child: Column(
             crossAxisAlignment:
             CrossAxisAlignment.start,
@@ -158,12 +182,15 @@ class ExperienceFeedCard extends StatelessWidget {
                       isAnonymous
                           ? Icons
                           .visibility_off_outlined
-                          : Icons.person_outline,
+                          : Icons
+                          .person_outline,
                       color: Colors.white,
                     ),
                   ),
 
-                  const SizedBox(width: 12),
+                  const SizedBox(
+                    width: 12,
+                  ),
 
                   Expanded(
                     child: Column(
@@ -181,22 +208,32 @@ class ExperienceFeedCard extends StatelessWidget {
                           ),
                         ),
 
-                        const SizedBox(height: 4),
+                        const SizedBox(
+                          height: 4,
+                        ),
 
                         Text(
                           '$category • ${_formatTimeAgo()}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurface
+                                .withValues(
+                              alpha: 0.55,
+                            ),
                           ),
                         ),
                       ],
                     ),
                   ),
 
+                  // ------------------------------------------------
+                  // MORE BUTTON
+                  // ------------------------------------------------
                   IconButton(
                     onPressed: () {
-                      // Report / save / delete menu later.
+                      // Report / save / author controls later.
                     },
                     icon: const Icon(
                       Icons.more_horiz,
@@ -205,7 +242,9 @@ class ExperienceFeedCard extends StatelessWidget {
                 ],
               ),
 
-              const SizedBox(height: 24),
+              const SizedBox(
+                height: 24,
+              ),
 
               // ----------------------------------------------------
               // EXPERIENCE BADGE
@@ -217,10 +256,11 @@ class ExperienceFeedCard extends StatelessWidget {
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color:
-                  AppTheme.primaryPurple,
+                  color: AppTheme.primaryPurple,
                   borderRadius:
-                  BorderRadius.circular(20),
+                  BorderRadius.circular(
+                    20,
+                  ),
                 ),
                 child: const Text(
                   'EXPERIENCE',
@@ -239,7 +279,9 @@ class ExperienceFeedCard extends StatelessWidget {
               // ----------------------------------------------------
               if (subject != null &&
                   subject.trim().isNotEmpty) ...[
-                const SizedBox(height: 18),
+                const SizedBox(
+                  height: 18,
+                ),
 
                 Text(
                   'About: $subject',
@@ -257,7 +299,9 @@ class ExperienceFeedCard extends StatelessWidget {
                 ),
               ],
 
-              const SizedBox(height: 18),
+              const SizedBox(
+                height: 18,
+              ),
 
               // ----------------------------------------------------
               // TITLE
@@ -266,12 +310,15 @@ class ExperienceFeedCard extends StatelessWidget {
                 title,
                 style: const TextStyle(
                   fontSize: 28,
-                  fontWeight: FontWeight.w900,
+                  fontWeight:
+                  FontWeight.w900,
                   height: 1.2,
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(
+                height: 20,
+              ),
 
               // ----------------------------------------------------
               // BODY
@@ -281,7 +328,8 @@ class ExperienceFeedCard extends StatelessWidget {
                 style: const TextStyle(
                   fontSize: 18,
                   height: 1.55,
-                  fontWeight: FontWeight.w500,
+                  fontWeight:
+                  FontWeight.w500,
                 ),
               ),
 
@@ -289,7 +337,9 @@ class ExperienceFeedCard extends StatelessWidget {
               // EXPIRATION
               // ----------------------------------------------------
               if (expiration != null) ...[
-                const SizedBox(height: 28),
+                const SizedBox(
+                  height: 28,
+                ),
 
                 Row(
                   children: [
@@ -304,12 +354,16 @@ class ExperienceFeedCard extends StatelessWidget {
                       ),
                     ),
 
-                    const SizedBox(width: 7),
+                    const SizedBox(
+                      width: 7,
+                    ),
 
                     Text(
                       expiration,
                       style: TextStyle(
                         fontSize: 13,
+                        fontWeight:
+                        FontWeight.w600,
                         color: Theme.of(context)
                             .colorScheme
                             .onSurface
@@ -322,87 +376,39 @@ class ExperienceFeedCard extends StatelessWidget {
                 ),
               ],
 
-              const SizedBox(height: 22),
+              const SizedBox(
+                height: 22,
+              ),
 
               const Divider(),
 
-              const SizedBox(height: 10),
+              const SizedBox(
+                height: 6,
+              ),
 
               // ----------------------------------------------------
-              // INTERACTIONS
+              // EXPERIENCE FLAGS + COMMENTS + SHARE
               // ----------------------------------------------------
-              Row(
-                children: [
-                  _InteractionButton(
-                    icon: Icons
-                        .thumb_up_alt_outlined,
-                    count: likes,
-                  ),
+              ExperienceInteractionBar(
+                experienceId:
+                experienceId,
+              ),
 
-                  const SizedBox(width: 20),
+              const SizedBox(
+                height: 8,
+              ),
 
-                  _InteractionButton(
-                    icon: Icons
-                        .thumb_down_alt_outlined,
-                    count: dislikes,
-                  ),
-
-                  const SizedBox(width: 20),
-
-                  _InteractionButton(
-                    icon:
-                    Icons.chat_bubble_outline,
-                    count: comments,
-                  ),
-
-                  const Spacer(),
-
-                  const Icon(
-                    Icons.share_outlined,
-                    size: 23,
-                  ),
-                ],
+              // ----------------------------------------------------
+              // TOP 2 COMMENTS
+              // ----------------------------------------------------
+              TopCommentsPreview(
+                experienceId:
+                experienceId,
               ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-// =================================================================
-// INTERACTION BUTTON
-// =================================================================
-
-class _InteractionButton
-    extends StatelessWidget {
-  final IconData icon;
-  final int count;
-
-  const _InteractionButton({
-    required this.icon,
-    required this.count,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(
-          icon,
-          size: 23,
-        ),
-
-        const SizedBox(width: 6),
-
-        Text(
-          '$count',
-          style: const TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
     );
   }
 }
