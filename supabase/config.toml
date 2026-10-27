@@ -1,0 +1,10 @@
+project_id = "glumsnssgvztaofjxrfp"
+
+[functions.defame-api]
+# Authentication is implemented with auth.getUser(token) in the handler, which
+# supports sessions issued to publishable-key clients.
+verify_jwt = false
+
+[functions.verification-webhook]
+# Authenticated with timestamped HMAC, never an unsigned browser redirect.
+verify_jwt = false
