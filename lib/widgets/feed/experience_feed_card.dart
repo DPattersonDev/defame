@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:defame/screens/experience_detail_screen.dart';
 import 'package:defame/theme/app_theme.dart';
 import 'package:defame/widgets/feed/experience_interaction_bar.dart';
-import 'package:defame/widgets/feed/top_comments_preview.dart';
 
 class ExperienceFeedCard extends StatelessWidget {
   final Map<String, dynamic> experience;
@@ -12,9 +12,6 @@ class ExperienceFeedCard extends StatelessWidget {
     required this.experience,
   });
 
-  // --------------------------------------------------------------
-  // FORMAT CREATED TIME
-  // --------------------------------------------------------------
   String _formatTimeAgo() {
     final String? createdAtText =
     experience['created_at']?.toString();
@@ -40,19 +37,16 @@ class ExperienceFeedCard extends StatelessWidget {
     }
 
     if (difference.inMinutes < 60) {
-      return '${difference.inMinutes}m ago';
+      return '${difference.inMinutes}m';
     }
 
     if (difference.inHours < 24) {
-      return '${difference.inHours}h ago';
+      return '${difference.inHours}h';
     }
 
-    return '${difference.inDays}d ago';
+    return '${difference.inDays}d';
   }
 
-  // --------------------------------------------------------------
-  // FORMAT EXPIRATION
-  // --------------------------------------------------------------
   String? _formatExpiration() {
     final String? expiresAtText =
     experience['expires_at']?.toString();
@@ -78,33 +72,47 @@ class ExperienceFeedCard extends StatelessWidget {
     }
 
     if (remaining.inDays >= 1) {
-      final int days = remaining.inDays;
-
-      final int hours =
-      remaining.inHours.remainder(24);
-
-      if (hours > 0) {
-        return 'Expires in ${days}d ${hours}h';
-      }
-
-      return 'Expires in ${days}d';
+      return '${remaining.inDays}d left';
     }
 
     if (remaining.inHours >= 1) {
-      final int hours =
-          remaining.inHours;
-
-      final int minutes =
-      remaining.inMinutes.remainder(60);
-
-      if (minutes > 0) {
-        return 'Expires in ${hours}h ${minutes}m';
-      }
-
-      return 'Expires in ${hours}h';
+      return '${remaining.inHours}h left';
     }
 
-    return 'Expires in ${remaining.inMinutes}m';
+    return '${remaining.inMinutes}m left';
+  }
+
+  String _buildPreview(
+      String body,
+      ) {
+    const int maxCharacters = 180;
+
+    final String cleanBody =
+    body.trim();
+
+    if (cleanBody.length <=
+        maxCharacters) {
+      return cleanBody;
+    }
+
+    return '${cleanBody.substring(
+      0,
+      maxCharacters,
+    ).trim()}...';
+  }
+
+  void _openExperience(
+      BuildContext context,
+      ) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            ExperienceDetailScreen(
+              experience: experience,
+            ),
+      ),
+    );
   }
 
   @override
@@ -120,12 +128,10 @@ class ExperienceFeedCard extends StatelessWidget {
             'Other';
 
     final String title =
-        experience['title']?.toString() ??
-            '';
+        experience['title']?.toString() ?? '';
 
     final String body =
-        experience['body']?.toString() ??
-            '';
+        experience['body']?.toString() ?? '';
 
     final String? subject =
     experience['subject_name']?.toString();
@@ -133,143 +139,136 @@ class ExperienceFeedCard extends StatelessWidget {
     final String? expiration =
     _formatExpiration();
 
-    return Container(
-      margin: const EdgeInsets.symmetric(
-        horizontal: 4,
-      ),
-      decoration: BoxDecoration(
+    final String preview =
+    _buildPreview(
+      body,
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          _openExperience(
+            context,
+          );
+        },
         borderRadius:
-        BorderRadius.circular(26),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            AppTheme.primaryPurple.withValues(
-              alpha: 0.24,
-            ),
+        BorderRadius.circular(
+          22,
+        ),
+        child: Container(
+          margin:
+          const EdgeInsets.symmetric(
+            horizontal: 4,
+          ),
+          padding:
+          const EdgeInsets.all(
+            20,
+          ),
+          decoration:
+          BoxDecoration(
+            color:
             Theme.of(context)
                 .colorScheme
                 .surface,
-          ],
-        ),
-        border: Border.all(
-          color: AppTheme.primaryPurple.withValues(
-            alpha: 0.28,
-          ),
-        ),
-      ),
-      child: ClipRRect(
-        borderRadius:
-        BorderRadius.circular(26),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(
-            22,
+            borderRadius:
+            BorderRadius.circular(
+              22,
+            ),
+            border: Border.all(
+              color:
+              Theme.of(context)
+                  .dividerColor
+                  .withValues(
+                alpha: 0.35,
+              ),
+            ),
           ),
           child: Column(
             crossAxisAlignment:
             CrossAxisAlignment.start,
             children: [
               // ----------------------------------------------------
-              // HEADER
+              // TOP ROW
               // ----------------------------------------------------
               Row(
                 children: [
-                  CircleAvatar(
-                    radius: 24,
-                    backgroundColor:
-                    AppTheme.primaryPurple,
-                    child: Icon(
-                      isAnonymous
-                          ? Icons
-                          .visibility_off_outlined
-                          : Icons
-                          .person_outline,
-                      color: Colors.white,
+                  Container(
+                    padding:
+                    const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration:
+                    BoxDecoration(
+                      color:
+                      AppTheme.primaryPurple
+                          .withValues(
+                        alpha: 0.11,
+                      ),
+                      borderRadius:
+                      BorderRadius.circular(
+                        20,
+                      ),
+                    ),
+                    child:
+                    const Text(
+                      'EXPERIENCE',
+                      style:
+                      TextStyle(
+                        color:
+                        AppTheme.primaryPurple,
+                        fontSize:
+                        10,
+                        fontWeight:
+                        FontWeight.w900,
+                        letterSpacing:
+                        0.7,
+                      ),
                     ),
                   ),
 
-                  const SizedBox(
-                    width: 12,
-                  ),
+                  const Spacer(),
 
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment:
-                      CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          isAnonymous
-                              ? 'Anonymous Experience'
-                              : 'Public Experience',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight:
-                            FontWeight.w800,
-                          ),
-                        ),
-
-                        const SizedBox(
-                          height: 4,
-                        ),
-
-                        Text(
-                          '$category • ${_formatTimeAgo()}',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurface
-                                .withValues(
-                              alpha: 0.55,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  // ------------------------------------------------
-                  // MORE BUTTON
-                  // ------------------------------------------------
-                  IconButton(
-                    onPressed: () {
-                      // Report / save / author controls later.
-                    },
-                    icon: const Icon(
-                      Icons.more_horiz,
+                  Text(
+                    _formatTimeAgo(),
+                    style:
+                    TextStyle(
+                      fontSize:
+                      12,
+                      color:
+                      Theme.of(context)
+                          .colorScheme
+                          .onSurface
+                          .withValues(
+                        alpha: 0.45,
+                      ),
                     ),
                   ),
                 ],
               ),
 
               const SizedBox(
-                height: 24,
+                height: 16,
               ),
 
               // ----------------------------------------------------
-              // EXPERIENCE BADGE
+              // CATEGORY / ANONYMOUS
               // ----------------------------------------------------
-              Container(
-                padding:
-                const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 7,
-                ),
-                decoration: BoxDecoration(
-                  color: AppTheme.primaryPurple,
-                  borderRadius:
-                  BorderRadius.circular(
-                    20,
-                  ),
-                ),
-                child: const Text(
-                  'EXPERIENCE',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontWeight:
-                    FontWeight.w900,
-                    fontSize: 11,
-                    letterSpacing: 1,
+              Text(
+                '$category • '
+                    '${isAnonymous ? 'Anonymous' : 'Public'}',
+                style:
+                TextStyle(
+                  fontSize: 13,
+                  fontWeight:
+                  FontWeight.w600,
+                  color:
+                  Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(
+                    alpha: 0.55,
                   ),
                 ),
               ),
@@ -280,20 +279,25 @@ class ExperienceFeedCard extends StatelessWidget {
               if (subject != null &&
                   subject.trim().isNotEmpty) ...[
                 const SizedBox(
-                  height: 18,
+                  height: 10,
                 ),
 
                 Text(
-                  'About: $subject',
-                  style: TextStyle(
+                  'Subject: $subject',
+                  maxLines: 1,
+                  overflow:
+                  TextOverflow.ellipsis,
+                  style:
+                  TextStyle(
                     fontSize: 13,
                     fontWeight:
                     FontWeight.w700,
-                    color: Theme.of(context)
+                    color:
+                    Theme.of(context)
                         .colorScheme
                         .onSurface
                         .withValues(
-                      alpha: 0.58,
+                      alpha: 0.72,
                     ),
                   ),
                 ),
@@ -308,67 +312,115 @@ class ExperienceFeedCard extends StatelessWidget {
               // ----------------------------------------------------
               Text(
                 title,
-                style: const TextStyle(
-                  fontSize: 28,
+                maxLines: 3,
+                overflow:
+                TextOverflow.ellipsis,
+                style:
+                const TextStyle(
+                  fontSize: 25,
+                  height: 1.18,
                   fontWeight:
                   FontWeight.w900,
-                  height: 1.2,
                 ),
               ),
 
               const SizedBox(
-                height: 20,
+                height: 14,
               ),
 
               // ----------------------------------------------------
-              // BODY
+              // PREVIEW
               // ----------------------------------------------------
               Text(
-                body,
-                style: const TextStyle(
-                  fontSize: 18,
-                  height: 1.55,
-                  fontWeight:
-                  FontWeight.w500,
+                preview,
+                maxLines: 5,
+                overflow:
+                TextOverflow.ellipsis,
+                style:
+                TextStyle(
+                  fontSize: 15,
+                  height: 1.5,
+                  color:
+                  Theme.of(context)
+                      .colorScheme
+                      .onSurface
+                      .withValues(
+                    alpha: 0.78,
+                  ),
                 ),
               ),
 
+              const SizedBox(
+                height: 18,
+              ),
+
               // ----------------------------------------------------
-              // EXPIRATION
+              // READ EXPERIENCE
               // ----------------------------------------------------
+              Row(
+                children: [
+                  const Text(
+                    'Read the experience',
+                    style:
+                    TextStyle(
+                      color:
+                      AppTheme.primaryPurple,
+                      fontSize:
+                      14,
+                      fontWeight:
+                      FontWeight.w800,
+                    ),
+                  ),
+
+                  const SizedBox(
+                    width: 5,
+                  ),
+
+                  const Icon(
+                    Icons.arrow_forward,
+                    size: 17,
+                    color:
+                    AppTheme.primaryPurple,
+                  ),
+                ],
+              ),
+
               if (expiration != null) ...[
                 const SizedBox(
-                  height: 28,
+                  height: 18,
                 ),
 
                 Row(
                   children: [
                     Icon(
-                      Icons.schedule,
-                      size: 18,
-                      color: Theme.of(context)
+                      Icons.schedule_outlined,
+                      size: 15,
+                      color:
+                      Theme.of(context)
                           .colorScheme
                           .onSurface
                           .withValues(
-                        alpha: 0.5,
+                        alpha: 0.4,
                       ),
                     ),
 
                     const SizedBox(
-                      width: 7,
+                      width: 5,
                     ),
 
                     Text(
                       expiration,
-                      style: TextStyle(
-                        fontSize: 13,
+                      style:
+                      TextStyle(
+                        fontSize: 11,
                         fontWeight:
                         FontWeight.w600,
-                        color: Theme.of(context)
+                        color:
+                        Theme.of(context)
                             .colorScheme
                             .onSurface
                             .withValues(
-                          alpha: 0.5,
+                          alpha: 0.4,
                         ),
                       ),
                     ),
@@ -376,34 +428,31 @@ class ExperienceFeedCard extends StatelessWidget {
                 ),
               ],
 
-              const SizedBox(
-                height: 22,
-              ),
+              const Spacer(),
 
               const Divider(),
 
               const SizedBox(
-                height: 6,
+                height: 4,
               ),
 
               // ----------------------------------------------------
-              // EXPERIENCE FLAGS + COMMENTS + SHARE
+              // GREEN FLAG / RED FLAG / COMMENT COUNTS
               // ----------------------------------------------------
-              ExperienceInteractionBar(
-                experienceId:
-                experienceId,
-              ),
-
-              const SizedBox(
-                height: 8,
-              ),
-
+              //
+              // The reaction bar stays visible so users can
+              // still quickly react from the Home feed.
               // ----------------------------------------------------
-              // TOP 2 COMMENTS
-              // ----------------------------------------------------
-              TopCommentsPreview(
-                experienceId:
-                experienceId,
+              GestureDetector(
+                onTap: () {
+                  // Prevent the outer card tap from interfering
+                  // with reaction controls.
+                },
+                child:
+                ExperienceInteractionBar(
+                  experienceId:
+                  experienceId,
+                ),
               ),
             ],
           ),

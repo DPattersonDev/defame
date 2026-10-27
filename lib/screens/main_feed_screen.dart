@@ -1,12 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:defame/screens/activity_screen.dart';
 import 'package:defame/screens/community_screen.dart';
 import 'package:defame/screens/create_experience_screen.dart';
+import 'package:defame/screens/create_post_screen.dart';
 import 'package:defame/screens/profile_screen.dart';
 import 'package:defame/theme/app_theme.dart';
 import 'package:defame/widgets/feed/experience_feed_card.dart';
+import 'package:defame/widgets/feed/post_feed_card.dart';
 
 class MainFeedScreen extends StatefulWidget {
   const MainFeedScreen({
@@ -39,11 +43,30 @@ class _MainFeedScreenState
 
   String _selectedFilter = 'Recent';
 
-  bool _isLoadingExperiences = true;
+  bool _isLoadingFeed = true;
 
   String? _feedError;
 
-  List<Map<String, dynamic>> _experiences = [];
+  // ----------------------------------------------------------------
+  // ALL FEED ITEMS
+  // ----------------------------------------------------------------
+  //
+  // Experiences and Posts both go into this list.
+  //
+  // Each item receives:
+  //
+  // _feed_type = experience
+  //
+  // or:
+  //
+  // _feed_type = post
+  // ----------------------------------------------------------------
+  List<Map<String, dynamic>> _feedItems = [];
+
+  // ----------------------------------------------------------------
+  // EXPIRATION TIMER
+  // ----------------------------------------------------------------
+  Timer? _expirationTimer;
 
   // ----------------------------------------------------------------
   // PAGE CONTROLLER
@@ -57,37 +80,104 @@ class _MainFeedScreenState
   void initState() {
     super.initState();
 
-    _loadExperiences();
+    _loadFeed();
+
+    // --------------------------------------------------------------
+    // CHECK EXPIRED EXPERIENCES EVERY MINUTE
+    // --------------------------------------------------------------
+    _expirationTimer =
+        Timer.periodic(
+          const Duration(
+            minutes: 1,
+          ),
+              (_) {
+            _removeExpiredExperiences();
+          },
+        );
   }
 
   @override
   void dispose() {
+    _expirationTimer?.cancel();
+
     _pageController.dispose();
 
     super.dispose();
   }
 
   // ----------------------------------------------------------------
-  // LOAD EXPERIENCES
+  // LOAD HOME FEED
   // ----------------------------------------------------------------
-  Future<void> _loadExperiences() async {
+  Future<void> _loadFeed() async {
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _isLoadingExperiences = true;
+      _isLoadingFeed = true;
+
       _feedError = null;
     });
 
     try {
+      final SupabaseClient supabase =
+          Supabase.instance.client;
+
+      final String now =
+      DateTime.now()
+          .toUtc()
+          .toIso8601String();
+
       // ------------------------------------------------------------
-      // READ EXPERIENCES FROM SUPABASE
+      // LOAD EXPERIENCES
       // ------------------------------------------------------------
-      final response =
-      await Supabase.instance.client
-          .from('experiences')
+      //
+      // Only Experiences that:
+      //
+      // 1. are approved
+      // 2. have not expired
+      //
+      // are allowed into the Home feed.
+      // ------------------------------------------------------------
+      final List<dynamic> experienceResponse =
+      await supabase
+          .from(
+        'experiences',
+      )
           .select()
+          .eq(
+        'moderation_status',
+        'approved',
+      )
+          .or(
+        'expires_at.is.null,expires_at.gt.$now',
+      )
+          .order(
+        'created_at',
+        ascending: false,
+      );
+
+      // ------------------------------------------------------------
+      // LOAD POSTS
+      // ------------------------------------------------------------
+      //
+      // We also load post_images so PostFeedCard can find
+      // image_order 0 and use it as the cover.
+      // ------------------------------------------------------------
+      final List<dynamic> postResponse =
+      await supabase
+          .from(
+        'posts',
+      )
+          .select(
+        '''
+                *,
+                post_images (
+                  image_url,
+                  image_order
+                )
+                ''',
+      )
           .eq(
         'moderation_status',
         'approved',
@@ -97,10 +187,85 @@ class _MainFeedScreenState
         ascending: false,
       );
 
+      // ------------------------------------------------------------
+      // CONVERT EXPERIENCES TO FEED ITEMS
+      // ------------------------------------------------------------
       final List<Map<String, dynamic>>
-      loadedExperiences =
-      List<Map<String, dynamic>>.from(
-        response,
+      experienceItems =
+      experienceResponse.map(
+            (item) {
+          final Map<String, dynamic> map =
+          Map<String, dynamic>.from(
+            item as Map,
+          );
+
+          map['_feed_type'] =
+          'experience';
+
+          return map;
+        },
+      ).toList();
+
+      // ------------------------------------------------------------
+      // CONVERT POSTS TO FEED ITEMS
+      // ------------------------------------------------------------
+      final List<Map<String, dynamic>>
+      postItems =
+      postResponse.map(
+            (item) {
+          final Map<String, dynamic> map =
+          Map<String, dynamic>.from(
+            item as Map,
+          );
+
+          map['_feed_type'] =
+          'post';
+
+          return map;
+        },
+      ).toList();
+
+      // ------------------------------------------------------------
+      // COMBINE BOTH TYPES
+      // ------------------------------------------------------------
+      final List<Map<String, dynamic>>
+      combinedItems = [
+        ...experienceItems,
+        ...postItems,
+      ];
+
+      // ------------------------------------------------------------
+      // SORT NEWEST FIRST
+      // ------------------------------------------------------------
+      combinedItems.sort(
+            (
+            first,
+            second,
+            ) {
+          final DateTime firstDate =
+              DateTime.tryParse(
+                first['created_at']
+                    ?.toString() ??
+                    '',
+              ) ??
+                  DateTime.fromMillisecondsSinceEpoch(
+                    0,
+                  );
+
+          final DateTime secondDate =
+              DateTime.tryParse(
+                second['created_at']
+                    ?.toString() ??
+                    '',
+              ) ??
+                  DateTime.fromMillisecondsSinceEpoch(
+                    0,
+                  );
+
+          return secondDate.compareTo(
+            firstDate,
+          );
+        },
       );
 
       if (!mounted) {
@@ -108,45 +273,198 @@ class _MainFeedScreenState
       }
 
       setState(() {
-        _experiences =
-            loadedExperiences;
-
-        _isLoadingExperiences = false;
+        _feedItems =
+            combinedItems;
 
         _currentPostIndex = 0;
+
+        _isLoadingFeed = false;
       });
 
       // ------------------------------------------------------------
-      // RETURN TO FIRST EXPERIENCE
+      // RETURN TO FIRST FEED ITEM
       // ------------------------------------------------------------
       if (_pageController.hasClients &&
-          _experiences.isNotEmpty) {
+          _visibleFeedItems.isNotEmpty) {
         _pageController.jumpToPage(
           0,
         );
       }
     } on PostgrestException catch (error) {
+      debugPrint(
+        'Feed database error: ${error.message}',
+      );
+
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _isLoadingExperiences = false;
+        _isLoadingFeed = false;
 
         _feedError =
-        'Could not load Experiences: ${error.message}';
+        'Could not load the feed: '
+            '${error.message}';
       });
-    } catch (_) {
+    } catch (error) {
+      debugPrint(
+        'Feed error: $error',
+      );
+
       if (!mounted) {
         return;
       }
 
       setState(() {
-        _isLoadingExperiences = false;
+        _isLoadingFeed = false;
 
         _feedError =
         'Something went wrong while loading the feed.';
       });
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // FILTERED FEED
+  // ----------------------------------------------------------------
+  List<Map<String, dynamic>>
+  get _visibleFeedItems {
+    // --------------------------------------------------------------
+    // EXPERIENCES ONLY
+    // --------------------------------------------------------------
+    if (_selectedFilter ==
+        'Experiences') {
+      return _feedItems.where(
+            (item) {
+          return item['_feed_type'] ==
+              'experience';
+        },
+      ).toList();
+    }
+
+    // --------------------------------------------------------------
+    // POSTS ONLY
+    // --------------------------------------------------------------
+    if (_selectedFilter ==
+        'Posts') {
+      return _feedItems.where(
+            (item) {
+          return item['_feed_type'] ==
+              'post';
+        },
+      ).toList();
+    }
+
+    // --------------------------------------------------------------
+    // RECENT
+    // --------------------------------------------------------------
+    //
+    // Popular and Nearby will get their own logic later.
+    //
+    // For now:
+    //
+    // Recent
+    // Popular
+    // Nearby
+    //
+    // all show the combined feed.
+    // --------------------------------------------------------------
+    return _feedItems;
+  }
+
+  // ----------------------------------------------------------------
+  // REMOVE EXPIRED EXPERIENCES
+  // ----------------------------------------------------------------
+  void _removeExpiredExperiences() {
+    if (!mounted ||
+        _feedItems.isEmpty) {
+      return;
+    }
+
+    final DateTime now =
+    DateTime.now().toUtc();
+
+    final List<Map<String, dynamic>>
+    activeItems =
+    _feedItems.where(
+          (item) {
+        // ----------------------------------------------------------
+        // POSTS DO NOT EXPIRE
+        // ----------------------------------------------------------
+        if (item['_feed_type'] ==
+            'post') {
+          return true;
+        }
+
+        final String? expiresAtText =
+        item['expires_at']
+            ?.toString();
+
+        // ----------------------------------------------------------
+        // EXPERIENCE WITH NO EXPIRATION
+        // ----------------------------------------------------------
+        if (expiresAtText == null ||
+            expiresAtText.isEmpty) {
+          return true;
+        }
+
+        final DateTime? expiresAt =
+        DateTime.tryParse(
+          expiresAtText,
+        );
+
+        // Do not remove something if the date
+        // somehow cannot be parsed.
+        if (expiresAt == null) {
+          return true;
+        }
+
+        return expiresAt
+            .toUtc()
+            .isAfter(
+          now,
+        );
+      },
+    ).toList();
+
+    if (activeItems.length ==
+        _feedItems.length) {
+      return;
+    }
+
+    setState(() {
+      _feedItems =
+          activeItems;
+
+      final int visibleLength =
+          _visibleFeedItems.length;
+
+      if (visibleLength == 0) {
+        _currentPostIndex = 0;
+      } else if (_currentPostIndex >=
+          visibleLength) {
+        _currentPostIndex =
+            visibleLength - 1;
+      }
+    });
+
+    if (_pageController.hasClients &&
+        _visibleFeedItems.isNotEmpty) {
+      final int safePage =
+      _currentPostIndex.clamp(
+        0,
+        _visibleFeedItems.length - 1,
+      );
+
+      _pageController.animateToPage(
+        safePage,
+        duration:
+        const Duration(
+          milliseconds: 250,
+        ),
+        curve:
+        Curves.easeOut,
+      );
     }
   }
 
@@ -158,10 +476,6 @@ class _MainFeedScreenState
       ) {
     // --------------------------------------------------------------
     // CREATE BUTTON
-    // --------------------------------------------------------------
-    //
-    // Create opens the creation menu.
-    // It is not treated as a normal tab.
     // --------------------------------------------------------------
     if (index == 2) {
       _openCreateMenu();
@@ -187,11 +501,8 @@ class _MainFeedScreenState
       ),
     );
 
-    // --------------------------------------------------------------
-    // NEW EXPERIENCE CREATED
-    // --------------------------------------------------------------
     if (created == true) {
-      await _loadExperiences();
+      await _loadFeed();
 
       if (!mounted) {
         return;
@@ -209,6 +520,32 @@ class _MainFeedScreenState
           ),
         ),
       );
+    }
+  }
+
+  // ----------------------------------------------------------------
+  // CREATE POST
+  // ----------------------------------------------------------------
+  Future<void> _openPostCreator() async {
+    final bool? created =
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+        const CreatePostScreen(),
+      ),
+    );
+
+    if (created == true) {
+      await _loadFeed();
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _selectedIndex = 0;
+      });
     }
   }
 
@@ -252,7 +589,8 @@ class _MainFeedScreenState
                   'What do you want to create?',
                   textAlign:
                   TextAlign.center,
-                  style: TextStyle(
+                  style:
+                  TextStyle(
                     fontSize: 22,
                     fontWeight:
                     FontWeight.w900,
@@ -265,7 +603,8 @@ class _MainFeedScreenState
 
                 Text(
                   'Choose how you want to share.',
-                  style: TextStyle(
+                  style:
+                  TextStyle(
                     fontSize: 14,
                     color:
                     Theme.of(
@@ -307,7 +646,7 @@ class _MainFeedScreenState
                 ),
 
                 // --------------------------------------------------
-                // NORMAL POST
+                // POST
                 // --------------------------------------------------
                 _CreateOption(
                   icon:
@@ -315,21 +654,13 @@ class _MainFeedScreenState
                   title:
                   'Post',
                   description:
-                  'Share a thought, photo, video, poll, or update.',
+                  'Share photos, a caption, or a story.',
                   onTap: () {
                     Navigator.pop(
                       sheetContext,
                     );
 
-                    ScaffoldMessenger.of(
-                      context,
-                    ).showSnackBar(
-                      const SnackBar(
-                        content: Text(
-                          'Post creator coming later.',
-                        ),
-                      ),
-                    );
+                    _openPostCreator();
                   },
                 ),
               ],
@@ -347,12 +678,18 @@ class _MainFeedScreenState
       String filter,
       ) {
     setState(() {
-      _selectedFilter = filter;
+      _selectedFilter =
+          filter;
+
+      _currentPostIndex = 0;
     });
 
-    // --------------------------------------------------------------
-    // REAL FILTER LOGIC COMES LATER
-    // --------------------------------------------------------------
+    if (_pageController.hasClients &&
+        _visibleFeedItems.isNotEmpty) {
+      _pageController.jumpToPage(
+        0,
+      );
+    }
   }
 
   // ----------------------------------------------------------------
@@ -366,11 +703,8 @@ class _MainFeedScreenState
       // ------------------------------------------------------------
       // HOME APP BAR
       // ------------------------------------------------------------
-      //
-      // Community, Activity, and Profile have
-      // their own AppBars.
-      // ------------------------------------------------------------
-      appBar: _selectedIndex == 0
+      appBar:
+      _selectedIndex == 0
           ? _buildHomeAppBar()
           : null,
 
@@ -387,15 +721,10 @@ class _MainFeedScreenState
       NavigationBar(
         selectedIndex:
         _selectedIndex,
-
         onDestinationSelected:
         _onNavigationTapped,
-
         destinations:
         const [
-          // --------------------------------------------------------
-          // HOME
-          // --------------------------------------------------------
           NavigationDestination(
             icon:
             Icon(
@@ -409,9 +738,6 @@ class _MainFeedScreenState
             'Home',
           ),
 
-          // --------------------------------------------------------
-          // COMMUNITY
-          // --------------------------------------------------------
           NavigationDestination(
             icon:
             Icon(
@@ -425,9 +751,6 @@ class _MainFeedScreenState
             'Community',
           ),
 
-          // --------------------------------------------------------
-          // CREATE
-          // --------------------------------------------------------
           NavigationDestination(
             icon:
             Icon(
@@ -443,9 +766,6 @@ class _MainFeedScreenState
             'Create',
           ),
 
-          // --------------------------------------------------------
-          // ACTIVITY
-          // --------------------------------------------------------
           NavigationDestination(
             icon:
             Icon(
@@ -459,9 +779,6 @@ class _MainFeedScreenState
             'Activity',
           ),
 
-          // --------------------------------------------------------
-          // PROFILE
-          // --------------------------------------------------------
           NavigationDestination(
             icon:
             Icon(
@@ -486,7 +803,6 @@ class _MainFeedScreenState
     return AppBar(
       automaticallyImplyLeading:
       false,
-
       title:
       const Text(
         'De-Fame',
@@ -498,7 +814,6 @@ class _MainFeedScreenState
           24,
         ),
       ),
-
       actions: [
         // ----------------------------------------------------------
         // SEARCH
@@ -522,19 +837,13 @@ class _MainFeedScreenState
         ),
 
         // ----------------------------------------------------------
-        // NOTIFICATIONS
+        // ACTIVITY
         // ----------------------------------------------------------
         IconButton(
           onPressed: () {
-            ScaffoldMessenger.of(context)
-                .showSnackBar(
-              const SnackBar(
-                content:
-                Text(
-                  'Notifications coming later.',
-                ),
-              ),
-            );
+            setState(() {
+              _selectedIndex = 3;
+            });
           },
           icon:
           const Icon(
@@ -554,33 +863,18 @@ class _MainFeedScreenState
   // ----------------------------------------------------------------
   Widget _buildCurrentPage() {
     switch (_selectedIndex) {
-    // ------------------------------------------------------------
-    // HOME
-    // ------------------------------------------------------------
       case 0:
         return _buildHomeFeed();
 
-    // ------------------------------------------------------------
-    // COMMUNITY
-    // ------------------------------------------------------------
       case 1:
         return const CommunityScreen();
 
-    // ------------------------------------------------------------
-    // ACTIVITY
-    // ------------------------------------------------------------
       case 3:
         return const ActivityScreen();
 
-    // ------------------------------------------------------------
-    // PROFILE
-    // ------------------------------------------------------------
       case 4:
         return const ProfileScreen();
 
-    // ------------------------------------------------------------
-    // FALLBACK
-    // ------------------------------------------------------------
       default:
         return _buildHomeFeed();
     }
@@ -590,6 +884,10 @@ class _MainFeedScreenState
   // HOME FEED
   // ----------------------------------------------------------------
   Widget _buildHomeFeed() {
+    final List<Map<String, dynamic>>
+    visibleItems =
+        _visibleFeedItems;
+
     return SafeArea(
       top: false,
       child: Column(
@@ -686,7 +984,7 @@ class _MainFeedScreenState
           // --------------------------------------------------------
           // LOADING
           // --------------------------------------------------------
-          if (_isLoadingExperiences)
+          if (_isLoadingFeed)
             const Expanded(
               child:
               Center(
@@ -739,7 +1037,7 @@ class _MainFeedScreenState
 
                       FilledButton(
                         onPressed:
-                        _loadExperiences,
+                        _loadFeed,
                         child:
                         const Text(
                           'Try Again',
@@ -752,9 +1050,9 @@ class _MainFeedScreenState
             )
 
           // --------------------------------------------------------
-          // EMPTY FEED
+          // EMPTY FILTER / FEED
           // --------------------------------------------------------
-          else if (_experiences.isEmpty)
+          else if (visibleItems.isEmpty)
               Expanded(
                 child:
                 Center(
@@ -770,7 +1068,12 @@ class _MainFeedScreenState
                       MainAxisSize.min,
                       children: [
                         Icon(
-                          Icons.auto_stories_outlined,
+                          _selectedFilter ==
+                              'Posts'
+                              ? Icons
+                              .photo_library_outlined
+                              : Icons
+                              .auto_stories_outlined,
                           size:
                           64,
                           color:
@@ -786,10 +1089,16 @@ class _MainFeedScreenState
                           18,
                         ),
 
-                        const Text(
-                          'No Experiences yet',
+                        Text(
+                          _selectedFilter ==
+                              'Posts'
+                              ? 'No Posts yet'
+                              : _selectedFilter ==
+                              'Experiences'
+                              ? 'No Experiences yet'
+                              : 'Nothing here yet',
                           style:
-                          TextStyle(
+                          const TextStyle(
                             fontSize:
                             22,
                             fontWeight:
@@ -803,27 +1112,9 @@ class _MainFeedScreenState
                         ),
 
                         const Text(
-                          'Be the first to share something.',
+                          'Create something and it will appear here.',
                           textAlign:
                           TextAlign.center,
-                        ),
-
-                        const SizedBox(
-                          height:
-                          20,
-                        ),
-
-                        FilledButton.icon(
-                          onPressed:
-                          _openExperienceCreator,
-                          icon:
-                          const Icon(
-                            Icons.add,
-                          ),
-                          label:
-                          const Text(
-                            'Share Experience',
-                          ),
                         ),
                       ],
                     ),
@@ -835,9 +1126,6 @@ class _MainFeedScreenState
             // REAL FEED
             // --------------------------------------------------------
             else ...[
-                // ------------------------------------------------------
-                // SWIPE INFORMATION
-                // ------------------------------------------------------
                 Padding(
                   padding:
                   const EdgeInsets.fromLTRB(
@@ -871,7 +1159,7 @@ class _MainFeedScreenState
                       const Spacer(),
 
                       Text(
-                        '${_currentPostIndex + 1} / ${_experiences.length}',
+                        '${_currentPostIndex + 1} / ${visibleItems.length}',
                         style:
                         TextStyle(
                           fontSize:
@@ -893,20 +1181,17 @@ class _MainFeedScreenState
                 ),
 
                 // ------------------------------------------------------
-                // EXPERIENCE PAGE VIEW
+                // PAGE VIEW
                 // ------------------------------------------------------
                 Expanded(
                   child:
                   PageView.builder(
                     controller:
                     _pageController,
-
                     scrollDirection:
                     Axis.horizontal,
-
                     itemCount:
-                    _experiences.length,
-
+                    visibleItems.length,
                     onPageChanged:
                         (index) {
                       setState(() {
@@ -914,12 +1199,44 @@ class _MainFeedScreenState
                             index;
                       });
                     },
-
                     itemBuilder:
                         (
                         context,
                         index,
                         ) {
+                      final Map<String, dynamic>
+                      item =
+                      visibleItems[index];
+
+                      final String feedType =
+                          item['_feed_type']
+                              ?.toString() ??
+                              '';
+
+                      // ------------------------------------------------
+                      // POST
+                      // ------------------------------------------------
+                      if (feedType ==
+                          'post') {
+                        return Padding(
+                          padding:
+                          const EdgeInsets.only(
+                            right:
+                            8,
+                            bottom:
+                            12,
+                          ),
+                          child:
+                          PostFeedCard(
+                            post:
+                            item,
+                          ),
+                        );
+                      }
+
+                      // ------------------------------------------------
+                      // EXPERIENCE
+                      // ------------------------------------------------
                       return Padding(
                         padding:
                         const EdgeInsets.only(
@@ -931,9 +1248,7 @@ class _MainFeedScreenState
                         child:
                         ExperienceFeedCard(
                           experience:
-                          _experiences[
-                          index
-                          ],
+                          item,
                         ),
                       );
                     },
@@ -952,7 +1267,9 @@ class _MainFeedScreenState
 class _FilterButton
     extends StatelessWidget {
   final String label;
+
   final bool selected;
+
   final VoidCallback onTap;
 
   const _FilterButton({
@@ -993,8 +1310,11 @@ class _FilterButton
 class _CreateOption
     extends StatelessWidget {
   final IconData icon;
+
   final String title;
+
   final String description;
+
   final VoidCallback onTap;
 
   const _CreateOption({
